@@ -16,6 +16,8 @@ typedef struct treef
 	TSNode root_node;
 	char const * query1_string;
 	TSQuery *query1;
+	char const * query2_string;
+	TSQuery *query2;
 } treef_context_t;
 
 int treef_init(treef_context_t *ctx);

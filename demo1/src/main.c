@@ -8,21 +8,6 @@
 #include "treef.h"
 
 
-
-
-// Function to generate a stringify function for an enum
-void generate_stringify_function(const char *enum_name, const char **values, size_t count)
-{
-	printf("\nconst char *%s_to_string(int value) {\n", enum_name);
-	printf("    switch (value) {\n");
-	for (size_t i = 0; i < count; i++) {
-		printf("        case %s: return \"%s\";\n", values[i], values[i]);
-	}
-	printf("        default: return \"Unknown\";\n");
-	printf("    }\n");
-	printf("}\n");
-}
-
 typedef struct {
     float x, y;
 } Position;
