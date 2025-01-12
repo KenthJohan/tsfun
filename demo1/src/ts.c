@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-char *ts_node_text(TSNode node, const char *source_code)
+char *ts_node_text_allocated(TSNode node, const char *source_code)
 {
 	uint32_t start_byte = ts_node_start_byte(node);
 	uint32_t end_byte = ts_node_end_byte(node);
@@ -31,7 +31,7 @@ void ts_print_tree(TSNode node, int depth, char const *source_code)
 		printf("  ");
 	}
 
-	char *text = ts_node_text(node, source_code);
+	char *text = ts_node_text_allocated(node, source_code);
 	// If text contains a newline, replace it with a space
 	for (size_t i = 0; i < strlen(text); i++) {
 		if (text[i] == '\n') {
@@ -46,7 +46,7 @@ void ts_print_tree(TSNode node, int depth, char const *source_code)
 	ts_node_start_point(node).row, ts_node_start_point(node).column,
 	ts_node_end_point(node).row, ts_node_end_point(node).column, text ? text : "");
 	*/
-	printf("%s\n", type);
+	printf("%s %i\n", type, ts_node_symbol(node));
 
 	free(text);
 

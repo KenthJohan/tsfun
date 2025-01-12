@@ -20,7 +20,9 @@
 		"utility": "c",
 		"string.h": "c",
 		"stdlib.h": "c",
-		"stdio.h": "c"
+		"stdio.h": "c",
+		"ts.h": "c",
+		"meta.h": "c"
 	},
 	"terminal.integrated.env.linux": {
 		"GTK_PATH": ""

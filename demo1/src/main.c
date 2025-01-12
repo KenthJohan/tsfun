@@ -5,12 +5,10 @@
 #include <flecs.h>
 #include "file.h"
 #include "ts.h"
+#include "meta.h"
 
 // Include the C language grammar.
 extern const TSLanguage *tree_sitter_c();
-
-// Helper function to read a file into memory
-
 
 
 
@@ -27,7 +25,9 @@ void generate_stringify_function(const char *enum_name, const char **values, siz
 	printf("}\n");
 }
 
-
+typedef struct {
+    float x, y;
+} Position;
 
 int main(int argc, char **argv)
 {
@@ -35,6 +35,24 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Usage: %s <file.c>\n", argv[0]);
 		return EXIT_FAILURE;
 	}
+	ecs_world_t * world = ecs_init();
+	ECS_IMPORT(world, FlecsUnits);
+	ECS_IMPORT(world, FlecsDoc);
+	ecs_set(world, EcsWorld, EcsRest, {.port = 0});
+	printf("Remote: %s\n", "https://www.flecs.dev/explorer/?remote=true");
+
+
+    ECS_COMPONENT(world, Position);
+
+    // Add reflection data to component
+    ecs_struct(world, {
+        .entity = ecs_id(Position), // Make sure to use existing id
+        .members = {
+            { .name = "x", .type = ecs_id(ecs_f32_t) }, // builtin float type
+            { .name = "y", .type = ecs_id(ecs_f32_t) }
+        }
+    });
+
 
 	// Initialize the parser
 	const TSLanguage *language = tree_sitter_c();
@@ -75,31 +93,12 @@ int main(int argc, char **argv)
 	// Process matches
 	TSQueryMatch match;
 	while (ts_query_cursor_next_match(cursor, &match)) {
-		const char *enum_name = NULL;
-		const char **values = malloc(sizeof(char *) * 100); // Arbitrary limit
-		size_t value_count = 0;
-
+		ecs_entity_t e = ecs_new(world);
+		ecs_entity_t o = ecs_set_scope(world, e);
 		for (uint32_t i = 0; i < match.capture_count; i++) {
-			TSQueryCapture capture = match.captures[i];
-			uint32_t length = 0;
-			const char *capture_name = ts_query_capture_name_for_id(query, capture.index, &length);
-			printf("%s %s\n", capture_name, ts_node_text(capture.node, source_code));
-			if (strcmp(capture_name, "type") == 0) {
-				//enum_name = ts_node_text(capture.node, source_code);
-			} else if (strcmp(capture_name, "field") == 0) {
-				//values[value_count++] = ts_node_text(capture.node, source_code);
-			}
-			printf(" ");
+			meta_append(world, e, match.captures[i], source_code);
 		}
-
-		if (enum_name && value_count > 0) {
-			generate_stringify_function(enum_name, values, value_count);
-		}
-		// Free allocated memory for captured values
-		for (size_t i = 0; i < value_count; i++) {
-			free((void *)values[i]);
-		}
-		free(values);
+		ecs_set_scope(world, o);
 	}
 
 	// Cleanup
@@ -108,6 +107,12 @@ int main(int argc, char **argv)
 	ts_query_delete(query);
 	ts_tree_delete(tree);
 	ts_parser_delete(parser);
+
+	while (1) {
+		ecs_progress(world, 0.0f);
+		ecs_sleepf(0.1f);
+	}
+
 
 	return EXIT_SUCCESS;
 }
