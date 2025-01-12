@@ -1,5 +1,6 @@
-#include "meta.h"
+#include "treef.h"
 #include "ts.h"
+#include "file.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -367,6 +368,7 @@ typedef enum {
 	alias_sym_statement_identifier = 361,
 	alias_sym_type_identifier = 362,
 } TSSymbol_enum_t;
+
 /*
     TSQueryMatch match;
     while (ts_query_cursor_next_match(cursor, &match)) {
@@ -400,60 +402,164 @@ typedef enum {
         free(values);
     }
 */
-void meta_append(ecs_world_t *world, ecs_entity_t e, TSQueryCapture capture, const char *source_code)
+
+int treef_init(treef_context_t *ctx)
 {
+	// Include the C language grammar.
+	extern const TSLanguage *tree_sitter_c();
+	ctx->language = tree_sitter_c();
+	ctx->parser = ts_parser_new();
+	ts_parser_set_language(ctx->parser, ctx->language);
+	ctx->tree = ts_parser_parse_string(ctx->parser, NULL, ctx->source_code, ctx->source_code_length);
+	ctx->root_node = ts_tree_root_node(ctx->tree);
+	printf("Syntax Tree:\n");
+	ts_print_tree(ctx->root_node, 0, ctx->source_code);
+	printf("\n");
+	ctx->query1_string = file_read_allocated("src/query2.scm");
+	printf("Query:\n%s\n\n", ctx->query1_string);
+	uint32_t error_offset;
+	TSQueryError error_type;
+	ctx->query1 = ts_query_new(ctx->language, ctx->query1_string, strlen(ctx->query1_string), &error_offset, &error_type);
+	if (!ctx->query1) {
+		fprintf(stderr, "Failed to create query at offset %u: error %d\n", error_offset, error_type);
+		fprintf(stderr, "Query string: %s\n", ctx->query1_string + error_offset);
+		ts_tree_delete(ctx->tree);
+		ts_parser_delete(ctx->parser);
+		return 1;
+	}
+	return 0;
+}
+
+int treef_fini(treef_context_t *ctx)
+{
+	// Cleanup
+	free((void *)ctx->source_code);
+	ts_query_delete(ctx->query1);
+	ts_tree_delete(ctx->tree);
+	ts_parser_delete(ctx->parser);
+	return 0;
+}
+
+void children(TSNode node, const char *source_code)
+{
+	uint32_t child_count = ts_node_child_count(node);
+	for (uint32_t i = 0; i < child_count; i++) {
+		TSNode child = ts_node_child(node, i);
+		char const *text = ts_node_text_allocated(child, source_code);
+		printf("%s %s\n", ts_node_type(child), text);
+		free((void *)text);
+	}
+}
+
+void print_field_info(treef_context_t *ctx, ecs_entity_t e, TSNode node)
+{
+	char const *text = ts_node_text_allocated(node, ctx->source_code);
+	TSSymbol_enum_t s = ts_node_symbol(node);
+	switch (s) {
+	case alias_sym_field_identifier:
+		ecs_set_name(ctx->world, e, text);
+		break;
+	case sym_array_declarator:
+		children(node, ctx->source_code);
+		break;
+
+	default:
+		break;
+	}
+	free((void *)text);
+}
+
+void treef_append(treef_context_t *ctx)
+{
+	TSQueryCursor *cursor = ts_query_cursor_new();
+	ts_query_cursor_exec(cursor, ctx->query1, ctx->root_node);
+	ecs_defer_begin(ctx->world);
+
+	// Process matches
+	TSQueryMatch match;
+	while (ts_query_cursor_next_match(cursor, &match)) {
+		ecs_entity_t e = ecs_new(ctx->world);
+		ecs_entity_t e1 = 0;
+		for (uint32_t i = 0; i < match.capture_count; i++) {
+			TSQueryCapture capture = match.captures[i];
+			char const *text = ts_node_text_allocated(capture.node, ctx->source_code);
+			printf("%i: %20s {%s}", capture.index, ts_node_type(capture.node), text);
+			// children(capture.node, source_code);
+			// print_field_info(world, language, capture.node, source_code);
+			switch (capture.index) {
+			case 1:
+				ecs_set(ctx->world, e1, EcsMember, {.type = ecs_id(ecs_i32_t), .count = 0});
+				break;
+			case 3: // field
+				e1 = ecs_new_w_pair(ctx->world, EcsChildOf, e);
+				break;
+			case 2: // decl
+				print_field_info(ctx, e1, capture.node);
+				break;
+			case 4: // struct name
+				ecs_set_name(ctx->world, e, text);
+				break;
+			default:
+				break;
+			}
+
+			free((void *)text);
+			printf("\n");
+		}
+		printf("\n");
+	}
+
+	ecs_defer_end(ctx->world);
+	ts_query_cursor_delete(cursor);
+
+	/*
 	ecs_member_t m;
 	TSSymbol_enum_t s = ts_node_symbol(capture.node);
-	char const *text = ts_node_text_allocated(capture.node, source_code);
 
 	switch (capture.index)
 	{
 	case 2: {
-		ecs_entity_t f = ecs_new(world);
-		ecs_set_name(world, f, text);
-		ecs_set(world, f, EcsMember, {.type = 0, .count = 0});
+	    ecs_entity_t f = ecs_new(world);
+	    //ecs_set_name(world, f, text);
+	    //ecs_set(world, f, EcsMember, {.type = 0, .count = 0});
 	} break;
-	
+
 	default:
-		break;
+	    break;
 	}
 
-	/*
 	switch (capture.index) {
 	case 2: // Name of struct
-		ecs_set_name(world, e, text);
-		ecs_set(world, e, EcsComponent, {0, 0});
-		break;
+	    ecs_set_name(world, e, text);
+	    ecs_set(world, e, EcsComponent, {0, 0});
+	    break;
 
 	case 1: {
-		ecs_entity_t f = ecs_new(world);
-		ecs_set_name(world, f, text);
-		ecs_set(world, f, EcsMember, {.type = 0, .count = 0});
+	    ecs_entity_t f = ecs_new(world);
+	    ecs_set_name(world, f, text);
+	    ecs_set(world, f, EcsMember, {.type = 0, .count = 0});
 	} break;
 
 	default:
-		break;
+	    break;
 	}
-	*/
 
 	printf("captureid %i: ", capture.index);
 	switch (s) {
 	case alias_sym_field_identifier:
-		printf("field_identifier %s", text);
-		break;
+	    printf("field_identifier %s", text);
+	    break;
 
 	case alias_sym_type_identifier:
-		printf("type_identifier %s", text);
-		break;
+	    printf("type_identifier %s", text);
+	    break;
 
 	case sym_primitive_type:
-		printf("primitive_type %s", text);
-		break;
+	    printf("primitive_type %s", text);
+	    break;
 
 	default:
-		break;
+	    break;
 	}
-	printf("\n");
-
-	free((void *)text);
+	*/
 }

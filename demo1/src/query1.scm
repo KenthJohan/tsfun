@@ -5,7 +5,7 @@
         (type_qualifier)? 
         [(primitive_type) (type_identifier)] @field_type
         (field_identifier) @field_identifier
-      )+ @field
+      )+
     )
   )
   (type_identifier) @struct_name
