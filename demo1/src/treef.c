@@ -403,7 +403,7 @@ typedef enum {
     }
 */
 
-TSQuery * treef_new_query(const TSLanguage *language, const char *query_string)
+TSQuery *treef_new_query(const TSLanguage *language, const char *query_string)
 {
 	uint32_t error_offset;
 	TSQueryError error_type;
@@ -433,7 +433,6 @@ int treef_init(treef_context_t *ctx)
 	printf("Query1:\n%s\n\n", ctx->query1_string);
 	ctx->query2_string = file_read_allocated("src/query3.scm");
 	printf("Query2:\n%s\n\n", ctx->query2_string);
-
 
 	ctx->query1 = treef_new_query(ctx->language, ctx->query1_string);
 	ctx->query2 = treef_new_query(ctx->language, ctx->query2_string);
@@ -467,33 +466,47 @@ void children(TSNode node, const char *source_code)
 	}
 }
 
+typedef enum {
+	SCM_QUERY2_TYPE_IDENTIFIER = 0,
+	SCM_QUERY2_POINTER_DECLARATOR = 1,
+	SCM_QUERY2_ARRAY_DECLARATOR_SIZE = 2,
+	SCM_QUERY2_ARRAY_DECLARATOR = 3,
+	SCM_QUERY2_FIELD_IDENTIFIER = 4,
+} scm_query2_t;
+
+typedef enum {
+	SCM_QUERY1_COMMENT = 0,
+	SCM_QUERY1_FIELD = 1,
+	SCM_QUERY1_STRUCT_NAME = 2,
+} scm_query1_t;
+
 void print_field_info(treef_context_t *ctx, ecs_entity_t e, TSNode node)
 {
 	TSQueryCursor *cursor = ts_query_cursor_new();
 	ts_query_cursor_exec(cursor, ctx->query2, node);
 	TSQueryMatch match;
 	while (ts_query_cursor_next_match(cursor, &match)) {
- 		for (uint32_t i = 0; i < match.capture_count; i++) {
+		for (uint32_t i = 0; i < match.capture_count; i++) {
 			TSQueryCapture capture = match.captures[i];
 			char const *text = ts_node_text_allocated(capture.node, ctx->source_code);
 			uint32_t length = 0;
 			const char *capture_name = ts_query_capture_name_for_id(ctx->query2, capture.index, &length);
 			printf("%s: %s\n", capture_name, text);
-			switch (capture.index)
-			{
-			case 0: // type_identifier
+			switch (capture.index) {
+			case SCM_QUERY2_TYPE_IDENTIFIER:
 				ecs_set(ctx->world, e, EcsMember, {.type = ecs_id(ecs_i32_t), .count = 0});
 				break;
-			case 1: // pointer_declarator
+			case SCM_QUERY2_POINTER_DECLARATOR:
 				ecs_set(ctx->world, e, EcsMember, {.type = ecs_id(ecs_uptr_t), .count = 0});
 				break;
-			case 2: // array_declarator::size
-				ecs_set(ctx->world, e, EcsMember, {.type = ecs_id(ecs_i32_t), .count = 1});
-				break;
-			case 4: // field_identifier
+			case SCM_QUERY2_ARRAY_DECLARATOR_SIZE: {
+				long long size = atoll(text);
+				ecs_set(ctx->world, e, EcsMember, {.type = ecs_id(ecs_i32_t), .count = size});
+			} break;
+			case SCM_QUERY2_FIELD_IDENTIFIER:
+				// field_identifier
 				ecs_set_name(ctx->world, e, text);
 				break;
-			
 			default:
 				break;
 			}
@@ -502,8 +515,6 @@ void print_field_info(treef_context_t *ctx, ecs_entity_t e, TSNode node)
 	}
 	ts_query_cursor_delete(cursor);
 }
-
-
 
 void treef_append(treef_context_t *ctx)
 {
@@ -523,13 +534,13 @@ void treef_append(treef_context_t *ctx)
 			// children(capture.node, source_code);
 			// print_field_info(world, language, capture.node, source_code);
 			switch (capture.index) {
-			case 0: // comment
+			case SCM_QUERY1_COMMENT:
 				break;
-			case 1: // field
+			case SCM_QUERY1_FIELD:
 				e1 = ecs_new_w_pair(ctx->world, EcsChildOf, e);
 				print_field_info(ctx, e1, capture.node);
 				break;
-			case 2: // struct name
+			case SCM_QUERY1_STRUCT_NAME:
 				ecs_set_name(ctx->world, e, text);
 				break;
 			default:
